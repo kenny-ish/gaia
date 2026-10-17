@@ -52,6 +52,7 @@ Token lifecycle, error hygiene, and the no-silent-fallback contract mirror
 from __future__ import annotations
 
 import base64
+import re
 from datetime import datetime, timezone
 from typing import (
     Any,
@@ -139,6 +140,23 @@ def _b64url(text: str) -> str:
     return base64.urlsafe_b64encode(text.encode("utf-8")).decode("ascii").rstrip("=")
 
 
+def _received_datetime_to_millis(value: Any) -> str:
+    """Convert Graph's ISO-8601 receipt time to Gmail epoch milliseconds."""
+    if not value:
+        return ""
+    iso = str(value).strip()
+    if iso.endswith("Z"):
+        iso = iso[:-1] + "+00:00"
+    iso = re.sub(r"(\.\d{6})\d+", r"\1", iso)
+    try:
+        received = datetime.fromisoformat(iso)
+    except (TypeError, ValueError, OverflowError):
+        return ""
+    if received.tzinfo is None:
+        received = received.replace(tzinfo=timezone.utc)
+    return str(int(received.astimezone(timezone.utc).timestamp() * 1000))
+
+
 def graph_message_to_gmail(
     msg: Dict[str, Any], *, include_body: bool = True
 ) -> Dict[str, Any]:
@@ -192,7 +210,7 @@ def graph_message_to_gmail(
         "threadId": msg.get("conversationId") or msg.get("id"),
         "labelIds": _derive_label_ids(msg),
         "snippet": msg.get("bodyPreview") or "",
-        "internalDate": msg.get("receivedDateTime") or "",
+        "internalDate": _received_datetime_to_millis(msg.get("receivedDateTime")),
         "payload": payload,
     }
 

@@ -122,3 +122,17 @@ class TestGraphMessageToGmailIncludeBody:
         explicit_call = graph_message_to_gmail(msg, include_body=True)
         assert default_call == explicit_call
         assert "data" in default_call["payload"]["body"]
+
+    def test_internal_date_is_epoch_millis(self):
+        out = graph_message_to_gmail(_graph_message())
+
+        assert out["internalDate"] == "1780306200000"
+        assert out["internalDate"].isdigit()
+
+    def test_internal_date_handles_graph_fractional_seconds(self):
+        msg = _graph_message()
+        msg["receivedDateTime"] = "2026-06-01T09:30:00.1234567Z"
+
+        out = graph_message_to_gmail(msg)
+
+        assert out["internalDate"] == "1780306200123"
