@@ -453,14 +453,14 @@ class TestDeduplication:
         assert id2 == id1
 
     def test_dedup_replaces_with_newer_content(self, store):
-        """Dedup replaces content with the newer version (not longer)."""
+        """Dedup replaces content with a newer refinement."""
         id1 = store.store(
             category="fact",
-            content="Project uses React 18 with webpack bundler",
+            content="Project uses React 18",
         )
         id2 = store.store(
             category="fact",
-            content="Project uses React 19 with webpack bundler",
+            content="Project uses React 18 with webpack bundler",
         )
         assert id2 == id1
 
@@ -468,7 +468,26 @@ class TestDeduplication:
         results = store.search("React webpack bundler")
         match = next((r for r in results if r["id"] == id1), None)
         assert match is not None
-        assert "React 19" in match["content"]
+        assert "webpack bundler" in match["content"]
+
+    def test_dedup_keeps_distinct_high_overlap_facts(self, store):
+        """High overlap does not replace a fact with different words."""
+        id1 = store.store(
+            category="fact",
+            content="My mother's name is Elena",
+        )
+        id2 = store.store(
+            category="fact",
+            content="My mother-in-law's name is Miriam",
+        )
+
+        assert id2 != id1
+        items = store.get_all_knowledge(category="fact", include_superseded=True)[
+            "items"
+        ]
+        contents = {item["content"] for item in items}
+        assert "My mother's name is Elena" in contents
+        assert "My mother-in-law's name is Miriam" in contents
 
     def test_dedup_takes_max_confidence(self, store):
         """Dedup takes the maximum confidence of old and new."""
@@ -506,7 +525,7 @@ class TestDeduplication:
 
         id2 = store.store(
             category="fact",
-            content="GAIA supports NPU acceleration on AMD chips",
+            content="GAIA supports NPU acceleration on AMD hardware and Linux",
         )
         assert id2 == id1
 
@@ -3933,7 +3952,7 @@ class TestStoreEmbedding:
         # Store a high-overlap entry — should dedup and clear embedding
         store.store(
             category="fact",
-            content="The deployment pipeline uses Kubernetes containers",
+            content="The deployment pipeline uses Docker containers in production",
         )
 
         with store._lock:

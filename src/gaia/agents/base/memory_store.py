@@ -172,6 +172,11 @@ CONFIDENCE_BUMP_PER_RECALL: float = 0.02
 LOW_CONFIDENCE_PRUNE_THRESHOLD: float = 0.1
 
 
+def _word_tokens(text: str) -> set[str]:
+    """Return normalized word tokens for overlap and subset checks."""
+    return set(re.sub(r"[^\w\s]", " ", text.lower()).split())
+
+
 def _word_overlap(text1: str, text2: str) -> float:
     """Calculate word overlap ratio using Szymkiewicz-Simpson coefficient.
 
@@ -179,8 +184,8 @@ def _word_overlap(text1: str, text2: str) -> float:
 
     A subset of a longer text still counts as a match — appropriate for dedup.
     """
-    words1 = set(re.sub(r"[^\w\s]", " ", text1.lower()).split())
-    words2 = set(re.sub(r"[^\w\s]", " ", text2.lower()).split())
+    words1 = _word_tokens(text1)
+    words2 = _word_tokens(text2)
 
     if not words1 or not words2:
         return 0.0
@@ -189,6 +194,13 @@ def _word_overlap(text1: str, text2: str) -> float:
     min_size = min(len(words1), len(words2))
 
     return len(intersection) / min_size if min_size > 0 else 0.0
+
+
+def _is_word_subset(text1: str, text2: str) -> bool:
+    """Return whether either text's words are a subset of the other's."""
+    words1 = _word_tokens(text1)
+    words2 = _word_tokens(text2)
+    return bool(words1 and words2) and (words1 <= words2 or words2 <= words1)
 
 
 # ============================================================================
@@ -1177,7 +1189,7 @@ class MemoryStore:
     def _find_similar_locked(
         self, content: str, category: str, context: str, entity: str | None = None
     ) -> Optional[str]:
-        """Find existing knowledge with >80% word overlap in same category+context+entity.
+        """Find existing knowledge with >80% subset overlap in the same scope.
 
         Must be called with self._lock held.
 
@@ -1223,7 +1235,9 @@ class MemoryStore:
             for row in cursor.fetchall():
                 existing_id, existing_content = row[0], row[1]
                 overlap = _word_overlap(content, existing_content)
-                if overlap >= DEDUP_OVERLAP_THRESHOLD:
+                if overlap >= DEDUP_OVERLAP_THRESHOLD and _is_word_subset(
+                    content, existing_content
+                ):
                     logger.debug(
                         "[MemoryStore] dedup match: overlap=%.2f id=%s",
                         overlap,
