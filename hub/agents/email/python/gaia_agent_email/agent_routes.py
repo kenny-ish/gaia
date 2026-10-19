@@ -690,7 +690,20 @@ async def confirm_tool(request: ToolConfirmRequest) -> Dict[str, Any]:
         raise HTTPException(
             status_code=404, detail="No active run awaiting confirmation."
         )
-    session.handler.resolve_tool_confirmation(request.approved)
+    delivered = session.handler.resolve_tool_confirmation(request.approved)
+    if not delivered:
+        # Nothing was waiting for this answer: the prompt was already answered,
+        # timed out, or never asked. Saying "ok" here would tell the client it
+        # approved a tool that never ran (#4889); the flagship's
+        # /query/{run_id}/tool_decision answers 409 in the same case.
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "No tool confirmation is pending for this session: it was "
+                "already answered, timed out, or never asked. The decision "
+                "was not delivered."
+            ),
+        )
     return {"status": "ok", "approved": request.approved}
 
 

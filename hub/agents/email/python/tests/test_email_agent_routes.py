@@ -382,6 +382,45 @@ class TestToolConfirmation:
         )
         assert r.status_code == 404
 
+    def test_confirm_without_pending_prompt_409(self, client):
+        """A decision that reaches a live run with no prompt open is refused
+        (409) rather than acknowledged: nothing was waiting for it, so "ok"
+        would tell the client it approved a tool that never ran (#4889). The
+        run itself is unaffected and finishes normally."""
+        release = threading.Event()
+
+        class _BusyAgent(_FakeAgent):
+            def process_query(self, message: str) -> dict:
+                release.wait(timeout=5)
+                return {"answer": "done without a prompt"}
+
+        client.built["next"] = _BusyAgent()
+        events: list[dict] = []
+        t = self._run_query_in_thread(client, events)
+        try:
+            deadline = time.time() + 5
+            while time.time() < deadline:
+                session = agent_routes.registry.get("s1")
+                if session is not None and session.handler is not None:
+                    break
+                time.sleep(0.02)
+            assert session is not None and session.handler is not None
+            assert session.handler._confirm_id is None  # no prompt is open
+
+            confirm_client = TestClient(client.app_ref)
+            r = confirm_client.post(
+                "/v1/email/agent/confirm-tool",
+                json={"session_id": "s1", "approved": True},
+            )
+        finally:
+            release.set()
+        t.join(timeout=5)
+
+        assert r.status_code == 409
+        assert "No tool confirmation is pending" in r.json()["detail"]
+        final = [e for e in events if e["type"] == "run_complete"]
+        assert final and final[0]["answer"] == "done without a prompt"
+
 
 # ---------------------------------------------------------------------------
 # Memory toggle over HTTP (#1666)

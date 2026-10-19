@@ -9,6 +9,15 @@ contract version is tracked separately as
 
 ### Fixed
 
+- **`POST /v1/email/agent/confirm-tool` no longer says "ok" to a decision it
+  dropped (#4889).** When a decision arrived for a session whose run had no
+  tool prompt open (already answered, timed out, or never asked), the route
+  discarded it and still answered `{"status": "ok"}`, so the client believed
+  it had approved a tool that never ran. It now answers `409` with a detail
+  saying no confirmation is pending, as the flagship agent's
+  `/query/{run_id}/tool_decision` does. A decision that reaches an open
+  prompt is unchanged.
+
 - **A batch organize that failed for every message is reported as a failure.**
   `archive_message_batch`, `mark_read_batch`, `mark_unread_batch`,
   `add_star_batch`, `remove_star_batch`, `label_message_batch` and
